@@ -1,0 +1,23 @@
+{
+  "name": "myblog",
+  "version": "1.0.0",
+  "description": "mekind blog",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mekind/MyBlog.git"
+  },
+  "author": "mekind",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/mekind/MyBlog/issues"
+  },
+  "homepage": "https://github.com/mekind/MyBlog#readme",
+  "dependencies": {
+    "create-react-app": "^5.0.1",
+    "express": "^4.18.2"
+  }
+}
