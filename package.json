@@ -4,8 +4,8 @@
   "description": "myblog",
   "main": "app.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "nodemon app.js"
+    "test": "nodemon app.js",
+    "start": "forever start app.js"
   },
   "repository": {
     "type": "git",
@@ -20,6 +20,8 @@
   "dependencies": {
     "epxress": "^0.0.1-security",
     "express": "^4.18.2",
+    "forever": "^4.0.3",
+    "i": "^0.3.7",
     "nodemon": "^2.0.20"
   }
 }
