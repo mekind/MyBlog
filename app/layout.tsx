@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import Header from "@/components/Header";
+import Sidebar from "@/components/Sidebar";
+import SidebarShell from "@/components/SidebarShell";
 
 export const metadata: Metadata = {
   title: "MyBlog",
@@ -18,7 +21,9 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-full bg-white text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
-        {children}
+        <SidebarShell header={<Header />} sidebar={<Sidebar />}>
+          {children}
+        </SidebarShell>
       </body>
     </html>
   );

@@ -10,78 +10,67 @@ export type NoteFrontmatter = {
 };
 
 export type Note = {
+  /** URL slug. private/ prefix is stripped (e.g. private/foo → "foo"). */
   slug: string;
+  /** Filesystem segments under content/notes/ (excluding extension). */
+  relativePath: string[];
   frontmatter: NoteFrontmatter;
   body: string;
   raw: string;
   private: boolean;
+  /** Absolute path on disk. */
+  filepath: string;
 };
 
-type NoteEntry = {
-  filename: string;
-  root: string;
-  isPrivate: boolean;
-};
+type RawEntry = { relativePath: string[]; absPath: string };
 
-const PUBLIC_ROOT = path.join(process.cwd(), "content", "notes");
-const PRIVATE_ROOT = path.join(process.cwd(), "content", "notes", "private");
+export const NOTES_ROOT = path.join(process.cwd(), "content", "notes");
+export const PRIVATE_SEGMENT = "private";
 
-async function readDirSafe(dir: string): Promise<string[]> {
+async function walkNotes(
+  dir: string,
+  baseSegments: string[] = []
+): Promise<RawEntry[]> {
+  let entries: import("node:fs").Dirent[] = [];
   try {
-    const entries = await fs.readdir(dir);
-    return entries.filter((f) => f.endsWith(".mdx") || f.endsWith(".md"));
+    entries = await fs.readdir(dir, { withFileTypes: true });
   } catch {
     return [];
   }
-}
-
-async function readAllEntries(): Promise<NoteEntry[]> {
-  const [publicFiles, privateFiles] = await Promise.all([
-    readDirSafe(PUBLIC_ROOT),
-    readDirSafe(PRIVATE_ROOT),
-  ]);
-
-  const entries: NoteEntry[] = [
-    ...publicFiles.map((f) => ({
-      filename: f,
-      root: PUBLIC_ROOT,
-      isPrivate: false,
-    })),
-    ...privateFiles.map((f) => ({
-      filename: f,
-      root: PRIVATE_ROOT,
-      isPrivate: true,
-    })),
-  ];
-
-  // 슬러그 충돌 시 public 우선, private은 경고 후 무시
-  const seen = new Map<string, NoteEntry>();
-  for (const e of entries) {
-    const slug = fileToSlug(e.filename);
-    const prior = seen.get(slug);
-    if (!prior) {
-      seen.set(slug, e);
-      continue;
+  const results: RawEntry[] = [];
+  for (const entry of entries) {
+    if (entry.name.startsWith(".")) continue;
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      results.push(...(await walkNotes(fullPath, [...baseSegments, entry.name])));
+    } else if (
+      entry.isFile() &&
+      (entry.name.endsWith(".mdx") || entry.name.endsWith(".md"))
+    ) {
+      const baseName = entry.name.replace(/\.(mdx|md)$/, "");
+      results.push({
+        relativePath: [...baseSegments, baseName],
+        absPath: fullPath,
+      });
     }
-    const winner = prior.isPrivate ? e : prior;
-    const loser = prior.isPrivate ? prior : e;
-    console.warn(
-      `[notes] slug 충돌: '${slug}' — ${winner.isPrivate ? "private" : "public"} 채택, ${loser.isPrivate ? "private" : "public"} 무시`
-    );
-    seen.set(slug, winner);
   }
-  return Array.from(seen.values());
+  return results;
 }
 
-function fileToSlug(filename: string): string {
-  return filename.replace(/\.(mdx|md)$/, "");
+export function isPrivatePath(relativePath: string[]): boolean {
+  return relativePath[0] === PRIVATE_SEGMENT;
 }
 
-async function readNote(entry: NoteEntry): Promise<Note | null> {
-  const filepath = path.join(entry.root, entry.filename);
-  const raw = await fs.readFile(filepath, "utf8");
+export function pathToSlug(relativePath: string[]): string {
+  const segments = isPrivatePath(relativePath)
+    ? relativePath.slice(1)
+    : relativePath;
+  return segments.join("/");
+}
+
+async function readNote(entry: RawEntry): Promise<Note | null> {
+  const raw = await fs.readFile(entry.absPath, "utf8");
   const { data, content } = matter(raw);
-
   if (!data.title || !data.date) return null;
 
   const dateStr =
@@ -97,44 +86,71 @@ async function readNote(entry: NoteEntry): Promise<Note | null> {
   };
 
   return {
-    slug: fileToSlug(entry.filename),
+    slug: pathToSlug(entry.relativePath),
+    relativePath: entry.relativePath,
     frontmatter: fm,
     body: content,
     raw,
-    private: entry.isPrivate,
+    private: isPrivatePath(entry.relativePath),
+    filepath: entry.absPath,
   };
 }
 
+function resolveCollisions(entries: RawEntry[]): RawEntry[] {
+  const seen = new Map<string, RawEntry>();
+  for (const e of entries) {
+    const slug = pathToSlug(e.relativePath);
+    const prior = seen.get(slug);
+    if (!prior) {
+      seen.set(slug, e);
+      continue;
+    }
+    const eIsPriv = isPrivatePath(e.relativePath);
+    const pIsPriv = isPrivatePath(prior.relativePath);
+    let winner = prior;
+    if (!eIsPriv && pIsPriv) winner = e;
+    console.warn(
+      `[notes] slug 충돌: '${slug}' — ${winner === e ? e.absPath : prior.absPath} 채택, ${winner === e ? prior.absPath : e.absPath} 무시`
+    );
+    seen.set(slug, winner);
+  }
+  return Array.from(seen.values());
+}
+
 export async function getAllNotes(includeDrafts = false): Promise<Note[]> {
-  const entries = await readAllEntries();
-  const notes = await Promise.all(entries.map(readNote));
+  const raw = await walkNotes(NOTES_ROOT);
+  const deduped = resolveCollisions(raw);
+  const notes = await Promise.all(deduped.map(readNote));
   return notes
     .filter((n): n is Note => n !== null)
     .filter((n) => includeDrafts || !n.frontmatter.draft)
     .sort((a, b) => (a.frontmatter.date < b.frontmatter.date ? 1 : -1));
 }
 
-function decodeAndNormalize(slug: string): string {
-  let decoded = slug;
+function decodeAndNormalizeSegment(seg: string): string {
+  let decoded = seg;
   try {
-    decoded = decodeURIComponent(slug);
+    decoded = decodeURIComponent(seg);
   } catch {
-    // already decoded or malformed — fall through
+    /* already decoded or malformed */
   }
   return decoded.normalize("NFC");
 }
 
-export async function getNoteBySlug(slug: string): Promise<Note | null> {
-  const entries = await readAllEntries();
-  const target = decodeAndNormalize(slug);
-  const match = entries.find(
-    (e) => fileToSlug(e.filename).normalize("NFC") === target
-  );
-  if (!match) return null;
-  return readNote(match);
+export function decodeSlugParam(slugSegments: string[] | string): string {
+  const segments = Array.isArray(slugSegments) ? slugSegments : [slugSegments];
+  return segments.map(decodeAndNormalizeSegment).join("/");
 }
 
-export async function getAllSlugs(): Promise<string[]> {
+export async function getNoteBySlug(
+  slugSegments: string[]
+): Promise<Note | null> {
+  const target = decodeSlugParam(slugSegments);
+  const all = await getAllNotes(true);
+  return all.find((n) => n.slug === target) ?? null;
+}
+
+export async function getAllSlugSegments(): Promise<string[][]> {
   const notes = await getAllNotes(true);
-  return notes.map((n) => n.slug);
+  return notes.map((n) => n.slug.split("/"));
 }

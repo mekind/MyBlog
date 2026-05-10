@@ -2,7 +2,7 @@ import Link from "next/link";
 import { resolveWikiTarget } from "@/lib/wiki-links";
 
 export default async function WikiLink({ token }: { token: string }) {
-  const { slug, exists, label } = await resolveWikiTarget(token);
+  const { slug, exists, ambiguous, label } = await resolveWikiTarget(token);
   if (exists) {
     return (
       <Link
@@ -15,8 +15,16 @@ export default async function WikiLink({ token }: { token: string }) {
   }
   return (
     <span
-      title="아직 쓰지 않은 노트"
-      className="text-zinc-500 underline decoration-dotted decoration-zinc-400 underline-offset-2"
+      title={
+        ambiguous
+          ? "모호한 basename — 풀 경로(folder/name)로 작성하세요"
+          : "아직 쓰지 않은 노트"
+      }
+      className={
+        ambiguous
+          ? "text-amber-700 underline decoration-dotted decoration-amber-400 underline-offset-2 dark:text-amber-300"
+          : "text-zinc-500 underline decoration-dotted decoration-zinc-400 underline-offset-2"
+      }
     >
       {label}
     </span>
