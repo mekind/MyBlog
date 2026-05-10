@@ -42,3 +42,6 @@ next-env.d.ts
 
 # OMC runtime state (session-local)
 .omc/state/
+
+# 개인 글 (Phase B 라이브 작성)
+content/notes/private/

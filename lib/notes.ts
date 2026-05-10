@@ -14,25 +14,71 @@ export type Note = {
   frontmatter: NoteFrontmatter;
   body: string;
   raw: string;
+  private: boolean;
 };
 
-const NOTES_DIR = path.join(process.cwd(), "content", "notes");
+type NoteEntry = {
+  filename: string;
+  root: string;
+  isPrivate: boolean;
+};
 
-async function readNotesDir(): Promise<string[]> {
+const PUBLIC_ROOT = path.join(process.cwd(), "content", "notes");
+const PRIVATE_ROOT = path.join(process.cwd(), "content", "notes", "private");
+
+async function readDirSafe(dir: string): Promise<string[]> {
   try {
-    const entries = await fs.readdir(NOTES_DIR);
+    const entries = await fs.readdir(dir);
     return entries.filter((f) => f.endsWith(".mdx") || f.endsWith(".md"));
   } catch {
     return [];
   }
 }
 
+async function readAllEntries(): Promise<NoteEntry[]> {
+  const [publicFiles, privateFiles] = await Promise.all([
+    readDirSafe(PUBLIC_ROOT),
+    readDirSafe(PRIVATE_ROOT),
+  ]);
+
+  const entries: NoteEntry[] = [
+    ...publicFiles.map((f) => ({
+      filename: f,
+      root: PUBLIC_ROOT,
+      isPrivate: false,
+    })),
+    ...privateFiles.map((f) => ({
+      filename: f,
+      root: PRIVATE_ROOT,
+      isPrivate: true,
+    })),
+  ];
+
+  // 슬러그 충돌 시 public 우선, private은 경고 후 무시
+  const seen = new Map<string, NoteEntry>();
+  for (const e of entries) {
+    const slug = fileToSlug(e.filename);
+    const prior = seen.get(slug);
+    if (!prior) {
+      seen.set(slug, e);
+      continue;
+    }
+    const winner = prior.isPrivate ? e : prior;
+    const loser = prior.isPrivate ? prior : e;
+    console.warn(
+      `[notes] slug 충돌: '${slug}' — ${winner.isPrivate ? "private" : "public"} 채택, ${loser.isPrivate ? "private" : "public"} 무시`
+    );
+    seen.set(slug, winner);
+  }
+  return Array.from(seen.values());
+}
+
 function fileToSlug(filename: string): string {
   return filename.replace(/\.(mdx|md)$/, "");
 }
 
-async function readNote(filename: string): Promise<Note | null> {
-  const filepath = path.join(NOTES_DIR, filename);
+async function readNote(entry: NoteEntry): Promise<Note | null> {
+  const filepath = path.join(entry.root, entry.filename);
   const raw = await fs.readFile(filepath, "utf8");
   const { data, content } = matter(raw);
 
@@ -51,16 +97,17 @@ async function readNote(filename: string): Promise<Note | null> {
   };
 
   return {
-    slug: fileToSlug(filename),
+    slug: fileToSlug(entry.filename),
     frontmatter: fm,
     body: content,
     raw,
+    private: entry.isPrivate,
   };
 }
 
 export async function getAllNotes(includeDrafts = false): Promise<Note[]> {
-  const files = await readNotesDir();
-  const notes = await Promise.all(files.map(readNote));
+  const entries = await readAllEntries();
+  const notes = await Promise.all(entries.map(readNote));
   return notes
     .filter((n): n is Note => n !== null)
     .filter((n) => includeDrafts || !n.frontmatter.draft)
@@ -78,9 +125,11 @@ function decodeAndNormalize(slug: string): string {
 }
 
 export async function getNoteBySlug(slug: string): Promise<Note | null> {
-  const files = await readNotesDir();
+  const entries = await readAllEntries();
   const target = decodeAndNormalize(slug);
-  const match = files.find((f) => fileToSlug(f).normalize("NFC") === target);
+  const match = entries.find(
+    (e) => fileToSlug(e.filename).normalize("NFC") === target
+  );
   if (!match) return null;
   return readNote(match);
 }

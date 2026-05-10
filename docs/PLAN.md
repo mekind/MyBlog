@@ -106,6 +106,14 @@ myblog/
 └── package.json
 ```
 
+### 5.1 공개 / 비공개 노트 분리
+
+- `content/notes/*.mdx` — **공개 노트**. git에 커밋되어 GitHub에 올라감.
+- `content/notes/private/*.mdx` — **비공개 노트**. `.gitignore`로 제외되어 로컬에만 존재.
+- 두 디렉토리는 **같은 슬러그 네임스페이스**를 공유하며, URL 경로에 `private/`이 드러나지 않는다 (예: `content/notes/private/foo.mdx` → `/notes/foo`).
+- 슬러그 충돌 시 **public이 우선**이고 private은 경고 후 무시된다 (`lib/notes.ts`의 `readAllEntries`).
+- 위키링크와 백링크는 두 디렉토리를 모두 인덱싱한다. 즉, 공개 노트가 비공개 노트로 위키링크하면 로컬에서는 동작하지만, GitHub에 올라간 빌드에는 미존재 링크로 보인다 — 의도적 동작.
+
 ---
 
 ## 6. Frontmatter 스키마
