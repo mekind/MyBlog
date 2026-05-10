@@ -1,7 +1,14 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import {
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useState,
+  useTransition,
+} from "react";
 import { useRouter } from "next/navigation";
+import { marked } from "marked";
 import { suggestSlug } from "@/lib/slug";
 import { createNote, updateNote } from "@/lib/note-actions";
 
@@ -12,6 +19,8 @@ export type NoteEditorInitial = {
   tags: string;
   body: string;
 };
+
+const PREVIEW_STORAGE_KEY = "myblog:editor:preview";
 
 export default function NoteEditor({
   mode,
@@ -32,6 +41,28 @@ export default function NoteEditor({
   const [isPrivate, setIsPrivate] = useState(initial.isPrivate);
   const [tags, setTags] = useState(initial.tags);
   const [body, setBody] = useState(initial.body);
+  const [showPreview, setShowPreview] = useState(false);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(PREVIEW_STORAGE_KEY);
+      if (raw === "1") setShowPreview(true);
+    } catch {
+      /* no-op */
+    }
+  }, []);
+
+  function togglePreview() {
+    setShowPreview((v) => {
+      const next = !v;
+      try {
+        window.localStorage.setItem(PREVIEW_STORAGE_KEY, next ? "1" : "0");
+      } catch {
+        /* no-op */
+      }
+      return next;
+    });
+  }
 
   function handleTitleChange(value: string) {
     setTitle(value);
@@ -122,7 +153,19 @@ export default function NoteEditor({
           />
         </Field>
 
-        <Field label="본문 (마크다운 / MDX)">
+        <div>
+          <div className="mb-1 flex items-center justify-between">
+            <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+              본문 (마크다운 / MDX)
+            </span>
+            <button
+              type="button"
+              onClick={togglePreview}
+              className="rounded border border-zinc-300 px-2 py-0.5 text-xs hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+            >
+              {showPreview ? "프리뷰 숨기기" : "프리뷰 보기"}
+            </button>
+          </div>
           <textarea
             value={body}
             onChange={(e) => setBody(e.target.value)}
@@ -130,7 +173,8 @@ export default function NoteEditor({
             className="w-full rounded border border-zinc-300 bg-white px-3 py-2 font-mono text-sm leading-relaxed dark:border-zinc-700 dark:bg-zinc-900"
             placeholder={`# 제목\n\n본문...\n\n[[다른 글]] 로 위키링크`}
           />
-        </Field>
+          {showPreview && <PreviewPane body={body} />}
+        </div>
 
         <div className="flex justify-end gap-3 pt-2">
           <button
@@ -153,6 +197,44 @@ export default function NoteEditor({
       </div>
     </div>
   );
+}
+
+function PreviewPane({ body }: { body: string }) {
+  const deferred = useDeferredValue(body);
+  const html = useMemo(() => renderMarkdown(deferred), [deferred]);
+  return (
+    <div className="mt-4 rounded border border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900/50">
+      <p className="mb-2 text-xs font-medium uppercase tracking-wider text-zinc-500">
+        Preview
+      </p>
+      <div
+        className="prose prose-zinc max-w-none dark:prose-invert"
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+      <p className="mt-3 text-xs text-zinc-500">
+        ※ 경량 렌더입니다. 위키링크는 회색 배지로만 표시되며 실제 유효성·백링크는 저장 후 노트 페이지에서 확인하세요.
+      </p>
+    </div>
+  );
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function renderMarkdown(body: string): string {
+  const tokenized = body.replace(
+    /\[\[([^\]]+)\]\]/g,
+    (_, token: string) =>
+      `<span class="rounded bg-amber-100 px-1 text-xs text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">${escapeHtml(token)}</span>`
+  );
+  const out = marked.parse(tokenized, { gfm: true, async: false }) as string;
+  return out;
 }
 
 function Field({
