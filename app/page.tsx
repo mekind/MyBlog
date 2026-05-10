@@ -1,8 +1,12 @@
 import Link from "next/link";
 import { getAllNotes } from "@/lib/notes";
+import { getTodos } from "@/lib/todos";
 
 export default async function Home() {
   const notes = await getAllNotes();
+  const todos = await getTodos();
+  const todoTotal = todos.length;
+  const todoRemaining = todos.filter((t) => !t.done).length;
 
   return (
     <main className="mx-auto max-w-2xl px-6 py-10">
@@ -14,6 +18,21 @@ export default async function Home() {
           개인 디지털 가든 — [[링크]]로 글이 연결됩니다
         </p>
       </header>
+
+      {todoTotal > 0 && (
+        <Link
+          href="/todos"
+          className="mb-10 flex items-center justify-between rounded-lg border border-zinc-200 px-4 py-3 text-sm transition hover:border-sky-400 hover:bg-sky-50 dark:border-zinc-800 dark:hover:border-sky-700 dark:hover:bg-sky-950/40"
+        >
+          <span className="font-medium text-zinc-900 dark:text-zinc-100">
+            TODO
+            <span className="ml-3 font-normal text-zinc-500">
+              미완료 {todoRemaining} / 전체 {todoTotal}
+            </span>
+          </span>
+          <span className="text-zinc-400">→</span>
+        </Link>
+      )}
 
       {notes.length === 0 ? (
         <div className="text-zinc-500">
